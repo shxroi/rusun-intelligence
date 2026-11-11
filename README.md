@@ -1,4 +1,4 @@
-# NusaWatt intelligence integration
+# Twin intelligence integration
 
 This folder is the clean GitHub-ready package for the NusaWatt forecasting
 and dashboard integration. It separates deployable runtime code from
