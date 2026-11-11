@@ -55,6 +55,17 @@ class ForecastRequest(BaseModel):
     endpoint: Optional[str] = None
 
 
+def database_connection():
+    dsn = os.environ.get("SUPABASE_DB_URL")
+    if not dsn:
+        raise HTTPException(status_code=503, detail="SUPABASE_DB_URL is not configured")
+    try:
+        import psycopg2
+        return psycopg2.connect(dsn)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="could not connect to Supabase database") from exc
+
+
 def tower_of(code):
     m = re.match(r"^\d+([A-Za-z]+)", str(code))
     return f"tower_{m.group(1)}" if m else "tower_X"
@@ -156,6 +167,53 @@ def health():
     for u in ("electricity", "water"):
         out[u] = {h: json.load(open(p)) for h, p in pointers(u).items()}
     return {"status": "ok", "store": STORE, "latest": out}
+
+
+@app.get("/api/catalog", dependencies=[Depends(auth)])
+def catalog(rusun: str = "3"):
+    """Return the real unit/tower identifiers used by forecast_job.py.
+
+    The browser only receives catalog data; the database connection string remains
+    in this API process.
+    """
+    sql = r"""
+        select u.id::text as unit_id, u.code as unit_code,
+               t.code as tower_code, t.id::text as tower_id
+        from "meteran-cerdas".units u
+        join "meteran-cerdas".towers t on t.id = u.tower_id
+        join "meteran-cerdas".complexes c on c.id = t.complex_id
+        where regexp_replace(c.code, '\D', '', 'g') = %(rusun)s
+        order by t.code, u.code
+    """
+    try:
+        with database_connection() as conn, conn.cursor() as cur:
+            cur.execute(sql, {"rusun": str(rusun)})
+            rows = cur.fetchall()
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="could not read catalog from Supabase") from exc
+
+    towers = {}
+    units = []
+    for unit_id, unit_code, tower_code, tower_id in rows:
+        tower_code = str(tower_code or "")
+        match = re.search(r"([A-Za-z])$", tower_code)
+        letter = match.group(1).upper() if match else tower_code
+        frontend_tower_id = f"asn{rusun}-t{letter.lower()}"
+        towers.setdefault(frontend_tower_id, {
+            "id": frontend_tower_id,
+            "code": tower_code,
+            "name": f"Tower {letter}",
+            "rusunId": f"asn{rusun}",
+        })
+        units.append({
+            "id": str(unit_code),
+            "databaseId": str(unit_id),
+            "code": str(unit_code),
+            "towerId": frontend_tower_id,
+        })
+    return {"rusunId": f"asn{rusun}", "towers": list(towers.values()), "units": units}
 
 
 @app.post("/api/forecast", dependencies=[Depends(auth)])

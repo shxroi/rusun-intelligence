@@ -49,8 +49,9 @@ app/forecast_api.py
 dashboard
 ```
 
-The API reads stored forecast files and does not connect to Supabase or load
-TensorFlow. The dashboard should call `/api/forecast`, not read experiment
+The API reads stored forecast files for forecasts and reads the Supabase catalog
+for dashboard unit/tower identifiers. It does not load TensorFlow. The
+dashboard should call `/api/forecast` and `/api/catalog`, not read experiment
 CSV files directly.
 
 ## Setup
@@ -110,6 +111,10 @@ Health check:
 ```powershell
 Invoke-RestMethod http://127.0.0.1:8000/api/health
 ```
+
+The analytics frontend uses `VITE_INTELLIGENCE_API_URL` (see its
+`.env.example`) and must be able to reach this API. Keep `SUPABASE_DB_URL` only
+in the intelligence service environment; never put it in the frontend.
 
 The dashboard sends a `POST` request to `/api/forecast` with `unitIds`,
 `horizonDays`, and `metric`. Supported metrics are `electricity` and
