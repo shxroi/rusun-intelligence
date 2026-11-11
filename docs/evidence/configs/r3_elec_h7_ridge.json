@@ -1,0 +1,101 @@
+{
+  "args": {
+    "source": "supabase",
+    "env_file": ".env",
+    "csv": "",
+    "rusun": "3",
+    "utility": "ELECTRICITY",
+    "aggregate": "none",
+    "reset_tolerance": null,
+    "start_date": "2025-09-01",
+    "horizon": 7,
+    "lookback": 30,
+    "min_kwh": 1.0,
+    "backtest_origins": 24,
+    "retrain_every": 4,
+    "val_days": 28,
+    "seeds": 1,
+    "epochs": 40,
+    "patience": 6,
+    "batch": 256,
+    "lr": 0.001,
+    "no_calendar": false,
+    "holidays": "none",
+    "holiday_csv": "",
+    "no_refit": false,
+    "no_weight": false,
+    "loss": "mae",
+    "huber_delta": 0.1,
+    "calibrate": false,
+    "model": "ridge",
+    "ridge_alpha": 0.01,
+    "forecast": false,
+    "out": "experiments/final/r3_elec_h7_ridge"
+  },
+  "cleaning": {
+    "duplicate_rows_quarantined": 0,
+    "negative_usage_to_missing": 0,
+    "meter_decrease_to_missing": 24,
+    "days": 318,
+    "units": 360,
+    "missing_cell_share": 0.008979734451432565,
+    "reset_tolerance": 0.02
+  },
+  "training": [
+    {
+      "cutoff": "2026-01-29",
+      "best_epochs": [
+        0
+      ],
+      "calibration": [
+        1.0
+      ]
+    },
+    {
+      "cutoff": "2026-02-26",
+      "best_epochs": [
+        0
+      ],
+      "calibration": [
+        1.0
+      ]
+    },
+    {
+      "cutoff": "2026-03-26",
+      "best_epochs": [
+        0
+      ],
+      "calibration": [
+        1.0
+      ]
+    },
+    {
+      "cutoff": "2026-04-23",
+      "best_epochs": [
+        0
+      ],
+      "calibration": [
+        1.0
+      ]
+    },
+    {
+      "cutoff": "2026-05-21",
+      "best_epochs": [
+        0
+      ],
+      "calibration": [
+        1.0
+      ]
+    },
+    {
+      "cutoff": "2026-06-18",
+      "best_epochs": [
+        0
+      ],
+      "calibration": [
+        1.0
+      ]
+    }
+  ],
+  "minutes": 0.09
+}

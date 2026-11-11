@@ -1,0 +1,1 @@
+Highest average building demand: Sun (115 per day, +8.1% vs the weekly mean). Lowest: Mon (102). Weekends are +3.7% vs weekdays. Hourly peak windows need hourly data (not used here).

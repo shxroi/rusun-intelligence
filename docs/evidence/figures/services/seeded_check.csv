@@ -1,0 +1,5 @@
+unit,start,end,type,what,detected,max_abs_z
+3F601,2026-05-22,2026-05-23,high_consumption,3x usage for 2 days,True,8.184551785555206
+3D701,2026-06-04,2026-06-05,low_consumption,10% of usage for 2 days,True,4.224541349419861
+3F304,2026-06-16,2026-06-16,zero_reading,5 zero days,True,
+3E1004,2026-06-30,2026-06-30,missing_data,4 missing days,True,
