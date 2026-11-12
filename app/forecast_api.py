@@ -25,6 +25,7 @@
 #    forecast_job.py import-backtest), the month after the cutoff shows the live forecast, and the cutoff month mixes both.
 #    meta.forecastType says which one ('live' | 'backtest' | 'mixed' | 'none') so the UI can label it.
 # ============================================================
+import datetime
 import glob
 import json
 import os
@@ -300,3 +301,206 @@ def forecast(req: ForecastRequest):
                  "fallbackShare": round(fallback_share, 3), "fallbackReasons": run.get("fallback_reasons", {}),
                  "unit": "kWh" if utility == "electricity" else "water units", "note": note},
     }
+
+
+# ============================================================================
+# Consumption summary / series / anomalies (real Supabase meter readings)
+# ============================================================================
+MONTH_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
+
+
+def month_range(month_key):
+    """'2026-05' -> (date(2026,5,1), date(2026,5,31))."""
+    if not month_key or not MONTH_RE.match(month_key):
+        raise HTTPException(status_code=422, detail="monthKey must look like 2026-05")
+    y, m = int(month_key[:4]), int(month_key[5:7])
+    start = datetime.date(y, m, 1)
+    end = datetime.date(y + (m == 12), (m % 12) + 1, 1) - datetime.timedelta(days=1)
+    return start, end
+
+
+def daily_rows(rusun, month_key, unit_ids=None, tower_id=None, floor=None):
+    """Daily electricity/water readings per unit for one month.
+
+    Returns list of dicts: unit_id, unit_code, tower_id, tower_code, floor, date, electricity, water.
+    Electricity and water are separate rows in meter_readings (utility_type), pivoted here.
+    """
+    start, end = month_range(month_key)
+    sql = r"""
+        select u.id::text as unit_id, u.code as unit_code,
+               t.id::text as tower_id, t.code as tower_code, u.floor,
+               r.reading_date, r.utility_type::text as utility, r.daily_usage
+        from "meteran-cerdas".meter_readings r
+        join "meteran-cerdas".units     u on u.id = r.unit_id
+        join "meteran-cerdas".towers    t on t.id = u.tower_id
+        join "meteran-cerdas".complexes c on c.id = t.complex_id
+        where r.deleted_at is null
+          and regexp_replace(c.code, '\D', '', 'g') = %(rusun)s
+          and r.reading_date between %(start)s and %(end)s
+    """
+    params = {"rusun": str(rusun), "start": start, "end": end}
+    if unit_ids:
+        sql += " and u.code = any(%(unit_codes)s)"
+        params["unit_codes"] = list(unit_ids)
+    if tower_id:
+        sql += " and t.id::text = %(tower_id)s"
+        params["tower_id"] = tower_id
+    if floor is not None:
+        sql += " and u.floor = %(floor)s"
+        params["floor"] = int(floor)
+    sql += " order by u.code, r.reading_date, r.utility_type"
+
+    with database_connection() as conn, conn.cursor() as cur:
+        cur.execute(sql, params)
+        rows = [dict(zip([d[0] for d in cur.description], r)) for r in cur.fetchall()]
+    for r in rows:
+        r["electricity"] = float(r["daily_usage"]) if r["utility"] == "ELECTRICITY" else None
+        r["water"] = float(r["daily_usage"]) if r["utility"] == "WATER" else None
+    return rows
+
+
+def _unit_daily_map(rows):
+    """Pivot rows -> {unit_code: {date: {electricity, water}}}, keeping unit metadata."""
+    meta, out = {}, {}
+    for r in rows:
+        code = r["unit_code"]
+        meta.setdefault(code, {"unitId": r["unit_id"], "code": code, "towerId": r["tower_id"],
+                               "towerCode": r["tower_code"], "floor": r["floor"]})
+        d = out.setdefault(code, {}).setdefault(str(r["reading_date"]), {"electricity": None, "water": None})
+        if r["electricity"] is not None:
+            d["electricity"] = r["electricity"]
+        if r["water"] is not None:
+            d["water"] = r["water"]
+    return meta, out
+
+
+@app.get("/api/summary", dependencies=[Depends(auth)])
+def summary(rusun: str = "3", monthKey: str = "", towerId: str = "", floor: int | None = None,
+            tariff_kwh: float | None = None):
+    """Monthly totals + per-unit summaries for the dashboard stat cards, heatmaps and reports."""
+    if not monthKey:
+        raise HTTPException(status_code=422, detail="monthKey is required (e.g. 2026-05)")
+    rows = daily_rows(rusun, monthKey, tower_id=towerId or None, floor=floor)
+    if not rows:
+        return {"scope": "rusun", "monthKey": monthKey, "totals": None, "towers": [], "units": [],
+                "note": "no readings for this month"}
+    meta, per_unit = _unit_daily_map(rows)
+
+    units = []
+    tot_e = tot_w = 0.0
+    peak = None
+    for code, days in per_unit.items():
+        e_vals = [d["electricity"] for d in days.values() if d["electricity"] is not None]
+        w_vals = [d["water"] for d in days.values() if d["water"] is not None]
+        n = len(days) or 1
+        sum_e, sum_w = sum(e_vals), sum(w_vals)
+        avg_e, avg_w = sum_e / n, sum_w / n
+        tot_e += sum_e
+        tot_w += sum_w
+        mean = avg_e
+        sd = (sum((v - mean) ** 2 for v in e_vals) / (len(e_vals) or 1)) ** 0.5 or 1.0
+        max_sigma = max(((v - mean) / sd for v in e_vals), default=0.0)
+        m = meta[code]
+        # frontend tower id must match the catalog (asn<rusun>-t<letter>)
+        tm = re.search(r"([A-Za-z])$", m["towerCode"] or "")
+        letter = tm.group(1).upper() if tm else (m["towerCode"] or "X")
+        units.append({
+            "unitId": m["unitId"], "code": code, "towerId": f"asn{rusun}-t{letter.lower()}",
+            "towerCode": m["towerCode"], "floor": m["floor"],
+            "totalElectricity": round(sum_e, 2), "totalWater": round(sum_w, 3),
+            "avgElectricity": round(avg_e, 3), "avgWater": round(avg_w, 3),
+            "maxSigma": round(max_sigma, 2),
+        })
+        if e_vals and (peak is None or sum_e > peak[1]):
+            peak = (code, sum_e)
+
+    # tower comparison — keyed by the same frontend tower id the catalog uses
+    # (asn<rusun>-t<letter>) so the dashboard can join the two responses.
+    towers = {}
+    for u in units:
+        m = re.search(r"([A-Za-z])$", u["towerCode"] or "")
+        letter = m.group(1).upper() if m else (u["towerCode"] or "X")
+        frontend_id = f"asn{rusun}-t{letter.lower()}"
+        t = towers.setdefault(frontend_id, {"towerId": frontend_id, "name": f"Tower {letter}",
+                                             "electricity": 0.0, "water": 0.0, "units": 0})
+        t["electricity"] += u["totalElectricity"]
+        t["water"] += u["totalWater"]
+        t["units"] += 1
+    towers_out = [{"towerId": t["towerId"], "name": t["name"], "units": t["units"],
+                   "electricity": round(t["electricity"], 1), "water": round(t["water"], 1)}
+                  for t in towers.values()]
+
+    return {
+        "scope": "floor" if floor is not None else "tower" if towerId else "rusun",
+        "monthKey": monthKey,
+        "totals": {
+            "electricity": round(tot_e, 1), "water": round(tot_w, 1),
+            "units": len(units), "towers": len(towers_out),
+            "peakUnit": peak[0] if peak else None,
+        },
+        "towers": towers_out,
+        "units": units,
+    }
+
+
+@app.get("/api/series", dependencies=[Depends(auth)])
+def series(rusun: str = "3", monthKey: str = "", unitIds: str = "", towerId: str = ""):
+    """Daily actuals per unit (and a summed 'total' series) for the charts."""
+    if not monthKey:
+        raise HTTPException(status_code=422, detail="monthKey is required (e.g. 2026-05)")
+    ids = [u for u in unitIds.split(",") if u] or None
+    rows = daily_rows(rusun, monthKey, unit_ids=ids, tower_id=towerId or None)
+    meta, per_unit = _unit_daily_map(rows)
+    out = {}
+    for code, days in per_unit.items():
+        out[code] = [{"date": d, "electricity": v["electricity"], "water": v["water"]}
+                     for d, v in sorted(days.items())]
+    dates = sorted({d for days in per_unit.values() for d in days})
+    total = []
+    for d in dates:
+        e = sum((days.get(d, {}).get("electricity") or 0) for days in per_unit.values())
+        w = sum((days.get(d, {}).get("water") or 0) for days in per_unit.values())
+        total.append({"date": d, "electricity": round(e, 2), "water": round(w, 3)})
+    return {"monthKey": monthKey, "units": out, "total": total}
+
+
+@app.get("/api/anomalies", dependencies=[Depends(auth)])
+def anomalies(rusun: str = "3", monthKey: str = "", threshold: float = 2.0):
+    """Per-unit z-score anomalies over the month (same idea as the mock detectAnomalies)."""
+    rows = daily_rows(rusun, monthKey)
+    meta, per_unit = _unit_daily_map(rows)
+    out = []
+    for code, days in per_unit.items():
+        e_vals = [v["electricity"] for v in days.values() if v["electricity"] is not None]
+        if len(e_vals) < 3:
+            continue
+        mean = sum(e_vals) / len(e_vals)
+        sd = (sum((v - mean) ** 2 for v in e_vals) / len(e_vals)) ** 0.5 or 1.0
+        for d, v in days.items():
+            if v["electricity"] is None:
+                continue
+            sigma = (v["electricity"] - mean) / sd
+            if sigma >= threshold:
+                m = meta[code]
+                out.append({
+                    "id": f"{code}-{d}", "unitId": m["unitId"], "unitCode": code,
+                    "towerId": m["towerId"], "floor": m["floor"],
+                    "timestamp": f"{d} 19:35", "metric": "electricity",
+                    "actual": round(v["electricity"], 2), "expected": round(mean, 2),
+                    "sigma": round(sigma, 2), "severity": "anomaly" if sigma >= 2.6 else "warning",
+                })
+    out.sort(key=lambda a: -a["sigma"])
+    return {"monthKey": monthKey, "threshold": threshold, "anomalies": out}
+
+
+@app.get("/api/series/intervals", dependencies=[Depends(auth)])
+def series_intervals(unitId: str = "", date: str = ""):
+    """5-minute interval readings for one unit-day.
+
+    The internal database stores daily usage only; interval data exists in the real
+    resident-facing database. Returns an empty list with a note so the UI can hide the chart.
+    """
+    if not unitId or not date:
+        raise HTTPException(status_code=422, detail="unitId and date are required")
+    return {"unitId": unitId, "date": date, "intervals": [],
+            "note": "interval data is not available in the internal database (daily usage only)"}
