@@ -208,17 +208,17 @@ class ResolveTests(unittest.TestCase):
         })
 
     def test_water_single_unit_maps_to_its_tower(self):
-        level, ids = resolve(["3A1001"], self.run, self.F, rusun=3)
+        level, ids = resolve(["3A1001"], self.run, self.F)
         self.assertEqual(level, "tower")
         self.assertEqual(ids, ["tower_A"])
 
     def test_water_unit_without_rusun_prefix_maps_to_tower(self):
-        level, ids = resolve(["A1001"], self.run, self.F, rusun=3)
+        level, ids = resolve(["A1001"], self.run, self.F)
         self.assertEqual(level, "tower")
         self.assertEqual(ids, ["tower_A"])
 
     def test_water_tower_code_resolves_to_itself(self):
-        level, ids = resolve(["tower_A"], self.run, self.F, rusun=3)
+        level, ids = resolve(["tower_A"], self.run, self.F)
         self.assertEqual(level, "tower")
         self.assertEqual(ids, ["tower_A"])
 
@@ -232,7 +232,7 @@ class ResolveTests(unittest.TestCase):
             "horizon_day": [1, 1, 1], "date": ["2026-07-16"] * 3,
         })
         run = dict(self.run, level="unit", rusun=3)
-        level, ids = resolve(["3A1001"], run, F, rusun=3)
+        level, ids = resolve(["3A1001"], run, F)
         self.assertEqual(level, "unit")
         self.assertEqual(ids, ["3A1001"])
 
@@ -246,17 +246,17 @@ class ResolveTests(unittest.TestCase):
             "horizon_day": [1, 1, 1], "date": ["2026-07-16"] * 3,
         })
         run = dict(self.run, level="tower", rusun=3)
-        level, ids = resolve(["4A"], run, F, rusun=3)
+        level, ids = resolve(["4A"], run, F)
         self.assertEqual(level, "tower")
         self.assertEqual(ids, ["tower_A"])
 
     def test_empty_list_is_building(self):
-        level, ids = resolve([], self.run, self.F, rusun=3)
+        level, ids = resolve([], self.run, self.F)
         self.assertEqual(level, "building")
         self.assertEqual(ids, ["building"])
 
     def test_building_is_building(self):
-        level, ids = resolve(["building"], self.run, self.F, rusun=3)
+        level, ids = resolve(["building"], self.run, self.F)
         self.assertEqual(level, "building")
         self.assertEqual(ids, ["building"])
 

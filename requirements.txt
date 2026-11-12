@@ -70,6 +70,8 @@ typing_extensions==4.16.0
 tzdata==2026.5
 urllib3==2.8.0
 uvicorn==0.54.0
+fastapi==0.162.4
+pydantic==2.14.3
 watchdog==6.0.0
 websockets==17.2
 wheel==0.48.0

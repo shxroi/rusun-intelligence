@@ -1,0 +1,135 @@
+{
+  "args": {
+    "source": "supabase",
+    "csv": "",
+    "rusun": "3",
+    "utility": "WATER",
+    "aggregate": "tower",
+    "reset_tolerance": null,
+    "start_date": "2025-09-01",
+    "horizon": 7,
+    "lookback": 30,
+    "min_kwh": 1.0,
+    "backtest_origins": 24,
+    "retrain_every": 4,
+    "val_days": 28,
+    "seeds": 3,
+    "epochs": 40,
+    "patience": 6,
+    "batch": 256,
+    "lr": 0.001,
+    "no_calendar": false,
+    "holidays": "none",
+    "holiday_csv": "",
+    "no_refit": false,
+    "no_weight": false,
+    "loss": "mae",
+    "huber_delta": 0.1,
+    "calibrate": false,
+    "model": "lstm",
+    "ridge_alpha": 0.01,
+    "no_daily": false,
+    "forecast": false,
+    "out": "experiments/final/r3_water"
+  },
+  "cleaning": {
+    "duplicate_rows_quarantined": 0,
+    "negative_usage_to_missing": 0,
+    "meter_decrease_to_missing": 34,
+    "days": 318,
+    "units": 360,
+    "missing_cell_share": 0.01882424877707897,
+    "reset_tolerance": 1.0,
+    "aggregate": "tower",
+    "series": [
+      "tower_A",
+      "tower_B",
+      "tower_C",
+      "tower_D",
+      "tower_E",
+      "tower_F"
+    ],
+    "missing_series_day_share": 0.0005241090146750524
+  },
+  "training": [
+    {
+      "cutoff": "2026-01-29",
+      "best_epochs": [
+        3,
+        2,
+        5
+      ],
+      "calibration": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "cutoff": "2026-02-26",
+      "best_epochs": [
+        22,
+        25,
+        28
+      ],
+      "calibration": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "cutoff": "2026-03-26",
+      "best_epochs": [
+        2,
+        1,
+        2
+      ],
+      "calibration": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "cutoff": "2026-04-23",
+      "best_epochs": [
+        30,
+        27,
+        26
+      ],
+      "calibration": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "cutoff": "2026-05-21",
+      "best_epochs": [
+        1,
+        14,
+        39
+      ],
+      "calibration": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "cutoff": "2026-06-18",
+      "best_epochs": [
+        1,
+        1,
+        1
+      ],
+      "calibration": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    }
+  ],
+  "minutes": 2.36
+}

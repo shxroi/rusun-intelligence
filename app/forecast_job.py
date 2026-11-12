@@ -46,7 +46,8 @@ BASE_DAYS = 28
 
 def parse_args():
     p = argparse.ArgumentParser(description="NusaWatt forecast job")
-    p.add_argument("command", choices=["train", "forecast", "evaluate"])
+    p.add_argument("command", choices=["train", "forecast", "evaluate", "import-backtest"])
+    p.add_argument("--backtest-csv", default="", help="import-backtest: backtest_daily.csv written by nusawatt_lstm_v2.py")
     p.add_argument("--source", choices=["supabase", "csv"], default="supabase")
     p.add_argument("--csv", default="")
     p.add_argument("--rusun", default="3")
@@ -339,7 +340,7 @@ def cmd_forecast(a):
                data_cutoff=str(as_of.date()), origin_date=str(dates[0].date()), model_version=meta["version"],
                method=meta["method"], level=meta["level"], series=int(U.shape[1]),
                forecast_series=int(F[F["level"].isin(["unit", "tower"]) & (F["id"] != "building")]["id"].nunique()),
-               fallback_reasons=reasons, interval_coverage=iv["coverage"], source=a.source, minutes=round((time.time() - t0) / 60, 2))
+               fallback_reasons=reasons, interval_coverage=iv["coverage"], interval=iv, source=a.source, minutes=round((time.time() - t0) / 60, 2))
     runs = f"{a.store}/runs"
     os.makedirs(runs, exist_ok=True)
     tmp, final = f"{runs}/.tmp_{run_id}", f"{runs}/{run_id}"
@@ -411,9 +412,26 @@ def cmd_evaluate(a):
     print(f"written {path}")
 
 
+def cmd_import_backtest(a):
+    """Copy the as-of daily forecasts of a rolling backtest into the store so the API can show them for past months."""
+    if not a.backtest_csv or not os.path.exists(a.backtest_csv):
+        sys.exit("pass --backtest-csv <run folder>/backtest_daily.csv (run nusawatt_lstm_v2.py without --no-daily)")
+    B = pd.read_csv(a.backtest_csv)
+    need = {"origin", "unit", "horizon_day", "date", "forecast", "actual", "base"}
+    if not need <= set(B.columns):
+        sys.exit(f"backtest file lacks columns: {need - set(B.columns)}")
+    if int(B["horizon_day"].max()) != a.horizon:
+        sys.exit(f"the file has horizon {int(B['horizon_day'].max())}, but --horizon is {a.horizon}")
+    os.makedirs(f"{a.store}/backtest", exist_ok=True)
+    out = f"{a.store}/backtest/{sk(a)}_h{a.horizon}.csv"
+    B.to_csv(out, index=False)
+    print(f"imported {len(B):,} rows, {B['origin'].nunique()} origins ({B['origin'].min()} -> {B['origin'].max()}), "
+          f"dates {B['date'].min()} -> {B['date'].max()} -> {out}")
+
+
 def main():
     a = parse_args()
-    {"train": cmd_train, "forecast": cmd_forecast, "evaluate": cmd_evaluate}[a.command](a)
+    {"train": cmd_train, "forecast": cmd_forecast, "evaluate": cmd_evaluate, "import-backtest": cmd_import_backtest}[a.command](a)
 
 
 if __name__ == "__main__":

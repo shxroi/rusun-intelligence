@@ -18,6 +18,11 @@
 #   7. Early stopping picks the epoch count, then the model is REFIT on all data
 #      (including the newest weeks) for that many epochs.
 #   8. SEED ENSEMBLE: --seeds N models, forecasts averaged; per-seed error also reported.
+#  11. WATER (tower/building level): --utility WATER --aggregate tower|building. Per-unit daily
+#      water in Rusun 3 is almost binary (0/1 counts), so the series are summed per tower/building
+#      first (a day is missing if fewer than 98% of the started units reported). Backward meter
+#      jitter of up to 1 count is kept as zero usage instead of being dropped.
+#  12. RMSE is reported next to MAE/WAPE/bias (horizon-sum per unit/series).
 #  10. OPTIONS: --loss mae|huber|mse (mae learns the MEDIAN and can under-forecast totals),
 #      --calibrate (scale forecasts by a factor measured out-of-sample on the validation
 #      windows), --model ridge (linear comparator on the same ratio inputs, to test whether
@@ -55,6 +60,8 @@ import pandas as pd
 warnings.filterwarnings("ignore")
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
 
+TRAIN_LOG = []          # per-seed training curves, written to training_history.json
+_CTX = {"cutoff": ""}
 BASE_DAYS = 28          # base = mean of the last 28 days (avg4 = 4 weeks)
 RATIO_CLIP = 5.0        # ratio clip for training stability only (evaluation is unclipped)
 
@@ -65,10 +72,13 @@ RATIO_CLIP = 5.0        # ratio clip for training stability only (evaluation is 
 def parse_args():
     p = argparse.ArgumentParser(description="NusaWatt hybrid ratio-LSTM (v2)")
     p.add_argument("--source", choices=["supabase", "csv"], default="supabase")
-    p.add_argument("--env-file", default=".env", help="local KEY=VALUE file (default: .env)")
     p.add_argument("--csv", default="")
     p.add_argument("--rusun", default="3", help="rusun number, e.g. 3")
-    p.add_argument("--utility", default="ELECTRICITY", choices=["ELECTRICITY"])
+    p.add_argument("--utility", default="ELECTRICITY", choices=["ELECTRICITY", "WATER"])
+    p.add_argument("--aggregate", choices=["none", "tower", "building"], default="none",
+                   help="sum units into tower/building series before forecasting (use for WATER)")
+    p.add_argument("--reset-tolerance", type=float, default=None,
+                   help="meter decreases larger than this become missing (default 0.02 kWh; 1.0 for WATER)")
     p.add_argument("--start-date", default="2025-09-01", help="first day used (drops commissioning months)")
     p.add_argument("--horizon", type=int, default=7)
     p.add_argument("--lookback", type=int, default=30)
@@ -95,26 +105,10 @@ def parse_args():
     p.add_argument("--model", choices=["lstm", "ridge"], default="lstm",
                    help="ridge = linear comparator on the same inputs (no LSTM)")
     p.add_argument("--ridge-alpha", type=float, default=0.01, help="ridge penalty per training sample")
+    p.add_argument("--no-daily", action="store_true", help="do not write backtest_daily.csv (as-of daily forecasts per origin)")
     p.add_argument("--forecast", action="store_true", help="also forecast the next H days after the backtest")
     p.add_argument("--out", default="experiments/lstm_v2")
     return p.parse_args()
-
-
-def load_env_file(path):
-    """Load simple KEY=VALUE entries without overwriting existing environment variables."""
-    if not path or not os.path.exists(path):
-        return
-    with open(path, encoding="utf-8") as f:
-        for raw in f:
-            line = raw.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, value = line.split("=", 1)
-            key, value = key.strip(), value.strip()
-            if value[:1] == value[-1:] and value[:1] in ("'", '"'):
-                value = value[1:-1]
-            if key:
-                os.environ.setdefault(key, value)
 
 
 # ----------------------------------------------------------------------------
@@ -159,7 +153,7 @@ def load_csv(a):
     return df[df["date"] >= pd.Timestamp(a.start_date)]
 
 
-def clean(df):
+def clean(df, tol=0.02):
     """Return (U days x units matrix with NaN for missing, report, unit_id map)."""
     rep = {}
     df = df.sort_values(["unit", "date"]).copy()
@@ -171,7 +165,7 @@ def clean(df):
     rep["negative_usage_to_missing"] = int(neg.sum())
     df.loc[neg, "usage"] = np.nan
     prev = df.groupby("unit")["total"].shift()
-    reset = df["total"] < prev - 0.02
+    reset = df["total"] < prev - tol
     rep["meter_decrease_to_missing"] = int(reset.sum())
     df.loc[reset, "usage"] = np.nan
     U = df.pivot(index="date", columns="unit", values="usage")
@@ -180,6 +174,29 @@ def clean(df):
     rep["missing_cell_share"] = float(U.isna().mean().mean())
     ids = df.drop_duplicates("unit").set_index("unit")["unit_id"].to_dict()
     return U, rep, ids
+
+
+def aggregate_series(U_df, mode, min_share=0.98):
+    """Sum units into tower or building series. A day is NaN if fewer than min_share of the units
+    that have already started reporting are present (no silent under-counting)."""
+    import re
+    codes = list(U_df.columns)
+    V = U_df.values
+    has = np.isfinite(V).any(axis=0)
+    first = np.isfinite(V).argmax(axis=0)
+    started = (np.arange(len(U_df))[:, None] >= first[None, :]) & has[None, :]
+    groups = {}
+    for c in codes:
+        m = re.match(r"^\d+([A-Za-z]+)", c)
+        groups.setdefault("building" if mode == "building" else f"tower_{m.group(1) if m else 'X'}", []).append(c)
+    out = {}
+    for name, cols in groups.items():
+        idx = [codes.index(c) for c in cols]
+        sub, st = V[:, idx], started[:, idx]
+        expected, reported = st.sum(1), np.isfinite(sub).sum(1)
+        ok = (expected > 0) & (reported >= min_share * expected)
+        out[name] = np.where(ok, np.nansum(sub, axis=1), np.nan)
+    return pd.DataFrame(out, index=U_df.index)
 
 
 # ----------------------------------------------------------------------------
@@ -289,6 +306,9 @@ def fit_models(S_tr, S_val, S_all, a, L, H):
                   epochs=a.epochs, batch_size=a.batch, callbacks=cb, verbose=0)
         best = int(np.argmin(h.history["val_loss"])) + 1
         best_epochs.append(best)
+        TRAIN_LOG.append(dict(cutoff=_CTX["cutoff"], seed=seed, best_epoch=best,
+                              loss=[float(v) for v in h.history["loss"]],
+                              val_loss=[float(v) for v in h.history["val_loss"]]))
         calibs.append(calibration_factor(m, S_val, a) if a.calibrate else 1.0)
         if not a.no_refit:
             tf.keras.utils.set_random_seed(142 + seed)
@@ -357,7 +377,7 @@ def predict_ratio(models, S, calibs=None):
 def metrics(actual, pred, origin):
     err = pred - actual
     d = pd.DataFrame({"o": origin, "act": actual, "pred": pred, "err": err, "abs": np.abs(err)})
-    unit = dict(mae=d["abs"].mean(), wape=100 * d["abs"].sum() / d["act"].sum(), bias=d["err"].mean())
+    unit = dict(mae=d["abs"].mean(), rmse=float(np.sqrt((d["err"] ** 2).mean())), wape=100 * d["abs"].sum() / d["act"].sum(), bias=d["err"].mean())
     g = d.groupby("o")
     bld = (100 * (g["pred"].sum() - g["act"].sum()).abs() / g["act"].sum()).mean()
     unit["building_err_pct"] = bld
@@ -380,7 +400,6 @@ def bootstrap_diff(diffs, n=5000, seed=0):
 # ----------------------------------------------------------------------------
 def main():
     a = parse_args()
-    load_env_file(a.env_file)
     os.makedirs(a.out, exist_ok=True)
     t0 = time.time()
     L, H = a.lookback, a.horizon
@@ -391,7 +410,16 @@ def main():
 
     print("-- Loading + cleaning --")
     raw = load_supabase(a) if a.source == "supabase" else load_csv(a)
-    U_df, rep, unit_ids = clean(raw)
+    tol = a.reset_tolerance if a.reset_tolerance is not None else (1.0 if a.utility == "WATER" else 0.02)
+    U_df, rep, unit_ids = clean(raw, tol)
+    rep["reset_tolerance"] = tol
+    if a.utility == "WATER" and a.aggregate == "none":
+        print("  WARNING: per-unit daily water is mostly 0/1 counts; consider --aggregate tower")
+    if a.aggregate != "none":
+        U_df, unit_ids = aggregate_series(U_df, a.aggregate), {}
+        rep["aggregate"] = a.aggregate
+        rep["series"] = list(U_df.columns)
+        rep["missing_series_day_share"] = float(U_df.isna().mean().mean())
     print(f"  {rep}")
     U = U_df.values
     T, n_units = U.shape
@@ -405,7 +433,7 @@ def main():
     if origins[0] - L - 2 * H - a.val_days < 60:
         sys.exit("Not enough history before the first test origin; reduce --backtest-origins or --start-date.")
 
-    rows, seed_rows, hist_info = [], [], []
+    rows, seed_rows, hist_info, daily_rows = [], [], [], []
     for b0 in range(0, len(origins), a.retrain_every):
         block = origins[b0:b0 + a.retrain_every]
         o0 = block[0]
@@ -416,6 +444,7 @@ def main():
         S_all = samples_at(U, cal, range(L, val_hi + 1), L, H, True, a.min_kwh)
         print(f"-- Train block cutoff {cal_idx[o0].date()} | train {len(S_tr['base']):,} val {len(S_val['base']):,} "
               f"all {len(S_all['base']):,} windows --")
+        _CTX["cutoff"] = str(cal_idx[o0].date())
         models, best, calibs = fit_fn(S_tr, S_val, S_all, a, L, H)
         hist_info.append(dict(cutoff=str(cal_idx[o0].date()), best_epochs=best, calibration=calibs))
         print(f"   best epochs per seed: {best} | calibration factors: {[round(c, 3) for c in calibs]}")
@@ -432,14 +461,21 @@ def main():
                 "actual": act.sum(1), MN: pred.sum(1),
                 "avg4": (S["base"] * H), "last_week": U[o - 7:o].T[S["unit"]].sum(1) * (H / 7.0),
                 **{f"{MN}_seed{i}": np.maximum(b * r, 0).sum(1) for i, r in enumerate(per_seed)}}))
+            hd = np.tile(np.arange(1, H + 1), len(act))
+            daily_rows.append(pd.DataFrame({"origin": str(cal_idx[o].date()), "unit": np.repeat(U_df.columns[S["unit"]].values, H),
+                                            "horizon_day": hd, "date": (pd.Timestamp(cal_idx[o]) + pd.to_timedelta(hd - 1, unit="D")).strftime("%Y-%m-%d"),
+                                            "forecast": pred.ravel().round(3), "actual": act.ravel().round(3),
+                                            "base": np.repeat(S["base"], H).round(3)}))
             seed_rows.append(pd.DataFrame({"origin": cal_idx[o].date(), "day": np.tile(np.arange(1, H + 1), len(act)),
                                            "abs_model": np.abs(pred - act).ravel(),
                                            "abs_avg4": np.abs(b - act).ravel()}))
 
     R = pd.concat(rows, ignore_index=True)
     R.to_csv(f"{a.out}/backtest_unit_origin.csv", index=False)
+    if daily_rows and not a.no_daily:
+        pd.concat(daily_rows, ignore_index=True).to_csv(f"{a.out}/backtest_daily.csv", index=False)
     org = R["origin"].astype(str).values
-    print("\n== BACKTEST (horizon-sum per unit, kWh) ==")
+    print("\n== BACKTEST (horizon-sum per unit/series, usage units: kWh or water counts) ==")
     summ = {m: metrics(R["actual"].values, R[m].values, org) for m in ["avg4", "last_week", MN]}
     for i in range(a.seeds):
         summ[f"{MN}_seed{i}"] = metrics(R["actual"].values, R[f"{MN}_seed{i}"].values, org)
@@ -452,7 +488,7 @@ def main():
     diff = (mae_o[MN] - mae_o["avg4"]).values
     mean_d, lo, hi, p_better = bootstrap_diff(diff)
     print(f"\nPaired over {len(diff)} origins: {MN} wins {(diff < 0).sum()}/{len(diff)} | "
-          f"mean MAE diff ({MN} - avg4) {mean_d:+.3f} kWh [95% bootstrap CI {lo:+.3f}, {hi:+.3f}] | "
+          f"mean MAE diff ({MN} - avg4) {mean_d:+.3f} usage units [95% bootstrap CI {lo:+.3f}, {hi:+.3f}] | "
           f"share of resamples where {MN} is better: {p_better:.0%}")
     D = pd.concat(seed_rows).groupby("day")[["abs_model", "abs_avg4"]].mean().round(3)
     D.to_csv(f"{a.out}/per_horizon_day_mae.csv")
@@ -467,6 +503,7 @@ def main():
         S_tr = samples_at(U, cal, range(L, val_lo - H + 1), L, H, True, a.min_kwh)
         S_val = samples_at(U, cal, range(val_lo, val_hi + 1), L, H, True, a.min_kwh)
         S_all = samples_at(U, cal, range(L, val_hi + 1), L, H, True, a.min_kwh)
+        _CTX["cutoff"] = "final"
         models, best, calibs = fit_fn(S_tr, S_val, S_all, a, L, H)
         S = samples_at(U, cal, [o], L, H, False, a.min_kwh)
         ratio, _ = predict_ratio(models, S, calibs)
@@ -495,6 +532,9 @@ def main():
         pd.DataFrame(elig).to_csv(f"{a.out}/forecast_ineligible_units.csv", index=False)
         print(f"   forecasted {len(codes)} units; {len(elig)} ineligible (reasons in forecast_ineligible_units.csv)")
 
+    if TRAIN_LOG:
+        with open(f"{a.out}/training_history.json", "w") as f:
+            json.dump(TRAIN_LOG, f)
     with open(f"{a.out}/run_config.json", "w") as f:
         json.dump(dict(args=vars(a), cleaning=rep, training=hist_info, minutes=round((time.time() - t0) / 60, 2)), f,
                   indent=2, default=str)
