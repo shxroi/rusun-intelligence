@@ -39,7 +39,19 @@ from pydantic import BaseModel
 
 STORE = os.environ.get("FORECAST_STORE", "forecast_store")
 API_KEY = os.environ.get("API_KEY", "")
-ORIGINS = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173,http://localhost:8080").split(",") if o.strip()]
+# Local dev origins: vite dev (5173-5175), TanStack Start preview, and the
+# deployed Cloudflare preview. Override with ALLOWED_ORIGINS to restrict.
+_DEFAULT_ORIGINS = ",".join([
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://localhost:5175",
+    "http://localhost:8080",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:5174",
+    "http://127.0.0.1:5175",
+])
+ORIGINS = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", _DEFAULT_ORIGINS).split(",") if o.strip()]
 
 app = FastAPI(title="NusaWatt forecast API", version="1.0")
 app.add_middleware(CORSMiddleware, allow_origins=ORIGINS, allow_methods=["*"], allow_headers=["*"])
@@ -343,8 +355,15 @@ def daily_rows(rusun, month_key, unit_ids=None, tower_id=None, floor=None):
         sql += " and u.code = any(%(unit_codes)s)"
         params["unit_codes"] = list(unit_ids)
     if tower_id:
-        sql += " and t.id::text = %(tower_id)s"
-        params["tower_id"] = tower_id
+        # Accept either the frontend tower id (asn<rusun>-t<letter>, what the
+        # catalog returns and the dashboard sends) or a raw tower UUID.
+        m = re.match(r"^asn(\d+)-t([a-z])$", str(tower_id))
+        if m:
+            sql += " and regexp_replace(t.code, '[^A-Za-z]', '', 'g') ilike %(tower_letter)s"
+            params["tower_letter"] = m.group(2).upper()
+        else:
+            sql += " and t.id::text = %(tower_id)s"
+            params["tower_id"] = tower_id
     if floor is not None:
         sql += " and u.floor = %(floor)s"
         params["floor"] = int(floor)
