@@ -1,0 +1,116 @@
+{
+  "label": "Electricity 30-day",
+  "args": {
+    "backtest": "experiments\\final\\r3_elec_h30\\backtest_unit_origin.csv",
+    "label": "Electricity 30-day",
+    "model_col": "lstm",
+    "baselines": "avg4,last_week",
+    "primary_baseline": "avg4",
+    "scale_col": "avg4",
+    "extra": null,
+    "id_col": "unit",
+    "level": "unit",
+    "horizon": 30,
+    "alpha": 0.05,
+    "dm_h": 0,
+    "interval_mode": "auto",
+    "lower_col": "lower",
+    "upper_col": "upper",
+    "coverage": 0.8,
+    "wf_origins": 4,
+    "wf_min_origins": 2,
+    "cov_tol": 0.05,
+    "reference": "",
+    "tolerance": 2.0,
+    "boot": 5000,
+    "seed": 0,
+    "selftest": false,
+    "lib": "app.nusawatt_lstm_v2",
+    "lib_dir": ".",
+    "strict": true,
+    "out": "experiments\\model_tests\\electricity-h30"
+  },
+  "origins": 12,
+  "rows": 4251,
+  "dm_h": 5,
+  "checks": [
+    {
+      "id": "DATA-01",
+      "check": "no missing values in used columns",
+      "status": "PASS",
+      "detail": "0 missing cells"
+    },
+    {
+      "id": "DATA-02",
+      "check": "one row per (origin, id)",
+      "status": "PASS",
+      "detail": "0 duplicate keys"
+    },
+    {
+      "id": "DATA-03",
+      "check": "no negative forecasts",
+      "status": "PASS",
+      "detail": "0 rows"
+    },
+    {
+      "id": "DATA-04",
+      "check": "avg4 (base x horizon) is positive",
+      "status": "PASS",
+      "detail": "0 rows"
+    },
+    {
+      "id": "GATE-01",
+      "check": "claim gate: >= 8 origins and >= 500 unit-origin rows",
+      "status": "PASS",
+      "detail": "12 origins, 4,251 rows"
+    },
+    {
+      "id": "MOD-08",
+      "check": "relative MAE vs avg4: pooled ratio < 1 and 95% CI entirely below 1",
+      "status": "PASS",
+      "detail": "0.919 [0.865, 0.970] (+8.1% vs baseline)"
+    },
+    {
+      "id": "MOD-09",
+      "check": "Diebold-Mariano (HLN) vs avg4, absolute-error loss, one-sided p < 0.05",
+      "status": "PASS (INDICATIVE: overlapping targets)",
+      "detail": "T=12 h=5 stat=-1.86 p=0.0452 wins=10/12"
+    },
+    {
+      "id": "MOD-10",
+      "check": "lstm (walk-forward) unit: coverage within 5 points of 80%",
+      "status": "PASS",
+      "detail": "76.3% [73.6, 79.1], below 13.0% / above 10.7%"
+    },
+    {
+      "id": "MOD-10",
+      "check": "lstm (walk-forward) tower (sum of unit bounds): coverage within 5 points of 80%",
+      "status": "OVER (conservative band)",
+      "detail": "97.2% [91.7, 100.0], below 2.8% / above 0.0%"
+    },
+    {
+      "id": "MOD-10",
+      "check": "lstm (walk-forward) building (sum of bounds): coverage within 5 points of 80%",
+      "status": "OVER (conservative band)",
+      "detail": "100.0% [100.0, 100.0], below 0.0% / above 0.0%"
+    },
+    {
+      "id": "MOD-10",
+      "check": "avg4 (walk-forward) unit: coverage within 5 points of 80%",
+      "status": "PASS",
+      "detail": "76.7% [73.9, 79.0], below 12.5% / above 10.8%"
+    },
+    {
+      "id": "MOD-10",
+      "check": "avg4 (walk-forward) tower (sum of unit bounds): coverage within 5 points of 80%",
+      "status": "OVER (conservative band)",
+      "detail": "97.2% [91.7, 100.0], below 2.8% / above 0.0%"
+    },
+    {
+      "id": "MOD-10",
+      "check": "avg4 (walk-forward) building (sum of bounds): coverage within 5 points of 80%",
+      "status": "OVER (conservative band)",
+      "detail": "100.0% [100.0, 100.0], below 0.0% / above 0.0%"
+    }
+  ]
+}
