@@ -1,0 +1,14 @@
+id,check,status,detail
+DATA-01,no missing values in used columns,PASS,0 missing cells
+DATA-02,"one row per (origin, id)",PASS,0 duplicate keys
+DATA-03,no negative forecasts,PASS,0 rows
+DATA-04,avg4 (base x horizon) is positive,PASS,0 rows
+GATE-01,claim gate: >= 8 origins and >= 500 unit-origin rows,PASS,"24 origins, 8,500 rows"
+MOD-08,relative MAE vs avg4: pooled ratio < 1 and 95% CI entirely below 1,PASS,"0.848 [0.803, 0.895] (+15.2% vs baseline)"
+MOD-09,"Diebold-Mariano (HLN) vs avg4, absolute-error loss, one-sided p < 0.05",PASS,T=24 h=1 stat=-4.92 p=0.0000 wins=22/24
+MOD-10,lstm (walk-forward) unit: coverage within 5 points of 80%,PASS,"77.6% [71.5, 83.0], below 11.4% / above 11.0%"
+MOD-10,lstm (walk-forward) tower (sum of unit bounds): coverage within 5 points of 80%,OVER (conservative band),"92.4% [81.8, 100.0], below 3.0% / above 4.5%"
+MOD-10,lstm (walk-forward) building (sum of bounds): coverage within 5 points of 80%,OVER (conservative band),"90.9% [77.3, 100.0], below 4.5% / above 4.5%"
+MOD-10,avg4 (walk-forward) unit: coverage within 5 points of 80%,PASS,"75.2% [67.8, 81.6], below 12.3% / above 12.5%"
+MOD-10,avg4 (walk-forward) tower (sum of unit bounds): coverage within 5 points of 80%,OVER (conservative band),"90.9% [78.0, 100.0], below 5.3% / above 3.8%"
+MOD-10,avg4 (walk-forward) building (sum of bounds): coverage within 5 points of 80%,OVER (conservative band),"90.9% [77.3, 100.0], below 4.5% / above 4.5%"

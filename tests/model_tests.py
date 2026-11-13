@@ -24,7 +24,7 @@
 #   python model_tests.py --backtest experiments/h30/backtest_unit_origin.csv --horizon 30 \
 #          --out experiments/model_tests/elec_h30
 #   python model_tests.py --backtest water/backtest_unit_origin.csv --level tower --horizon 7 --out experiments/model_tests/water
-#   python model_tests.py --selftest --lib nusawatt_lstm_v2 --lib-dir .
+#   python model_tests.py --selftest --lib app.nusawatt_lstm_v2 --lib-dir .
 #
 # IMPORTANT LIMITS (read before quoting results)
 #   * Interval coverage here is a WALK-FORWARD PROXY on horizon sums: for each origin the band is
@@ -543,7 +543,7 @@ def parse_args():
     p.add_argument("--boot", type=int, default=5000)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--selftest", action="store_true", help="run MOD-12 against the model library and exit")
-    p.add_argument("--lib", default="nusawatt_lstm_v2")
+    p.add_argument("--lib", default="app.nusawatt_lstm_v2")
     p.add_argument("--lib-dir", default=".")
     p.add_argument("--strict", action="store_true", help="exit with code 1 if any check FAILS")
     p.add_argument("--out", default="experiments/model_tests")

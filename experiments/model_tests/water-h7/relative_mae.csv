@@ -1,0 +1,7 @@
+model,baseline,measure,rel_mae,ci95_lo,ci95_hi,improvement_pct,note
+lstm,avg4,pooled (sum |err| model / sum |err| baseline),1.0340283130518817,0.9987537796959635,1.0871032094847113,-3.40283130518817,CI: bootstrap over origins
+lstm,avg4,geometric mean over origins,1.0384980501483396,1.0042859525965953,1.0819917057655046,-3.8498050148339624,CI: bootstrap over origins
+lstm,avg4,weighted geometric mean over units,1.0316117634256132,1.0192113085627792,1.0496262969658905,-3.1611763425613226,CI: bootstrap over units; 0 units excluded (zero MAE); model better for 0% of units
+lstm,last_week,pooled (sum |err| model / sum |err| baseline),0.7801304814471963,0.594640392925354,1.0023686860644996,21.986951855280367,CI: bootstrap over origins
+lstm,last_week,geometric mean over origins,0.8379005383273723,0.6653086092692337,1.0666188764001316,16.209946167262768,CI: bootstrap over origins
+lstm,last_week,weighted geometric mean over units,0.7860450414668271,0.7493670447238303,0.8203107170342363,21.395495853317293,CI: bootstrap over units; 0 units excluded (zero MAE); model better for 100% of units

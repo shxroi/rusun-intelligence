@@ -1,0 +1,104 @@
+{
+  "label": "Water 7-day",
+  "args": {
+    "backtest": "experiments\\final\\r3_water\\backtest_unit_origin.csv",
+    "label": "Water 7-day",
+    "model_col": "lstm",
+    "baselines": "avg4,last_week",
+    "primary_baseline": "avg4",
+    "scale_col": "avg4",
+    "extra": null,
+    "id_col": "unit",
+    "level": "tower",
+    "horizon": 7,
+    "alpha": 0.05,
+    "dm_h": 0,
+    "interval_mode": "auto",
+    "lower_col": "lower",
+    "upper_col": "upper",
+    "coverage": 0.8,
+    "wf_origins": 4,
+    "wf_min_origins": 2,
+    "cov_tol": 0.05,
+    "reference": "",
+    "tolerance": 2.0,
+    "boot": 5000,
+    "seed": 0,
+    "selftest": false,
+    "lib": "app.nusawatt_lstm_v2",
+    "lib_dir": ".",
+    "strict": true,
+    "out": "experiments\\model_tests\\water-h7"
+  },
+  "origins": 24,
+  "rows": 144,
+  "dm_h": 1,
+  "checks": [
+    {
+      "id": "DATA-01",
+      "check": "no missing values in used columns",
+      "status": "PASS",
+      "detail": "0 missing cells"
+    },
+    {
+      "id": "DATA-02",
+      "check": "one row per (origin, id)",
+      "status": "PASS",
+      "detail": "0 duplicate keys"
+    },
+    {
+      "id": "DATA-03",
+      "check": "no negative forecasts",
+      "status": "PASS",
+      "detail": "0 rows"
+    },
+    {
+      "id": "DATA-04",
+      "check": "avg4 (base x horizon) is positive",
+      "status": "PASS",
+      "detail": "0 rows"
+    },
+    {
+      "id": "GATE-01",
+      "check": "claim gate: >= 8 origins (row rule applies to unit level only)",
+      "status": "PASS",
+      "detail": "24 origins, 6 series, 144 rows; few series = low power"
+    },
+    {
+      "id": "MOD-08",
+      "check": "relative MAE vs avg4: pooled ratio < 1 and 95% CI entirely below 1",
+      "status": "FAIL",
+      "detail": "1.034 [0.999, 1.087] (-3.4% vs baseline)"
+    },
+    {
+      "id": "MOD-09",
+      "check": "Diebold-Mariano (HLN) vs avg4, absolute-error loss, one-sided p < 0.05",
+      "status": "NOT SIGNIFICANT",
+      "detail": "T=24 h=1 stat=1.56 p=0.9339 wins=9/24"
+    },
+    {
+      "id": "MOD-10",
+      "check": "lstm (walk-forward) tower: coverage within 5 points of 80%",
+      "status": "UNDER (band too narrow)",
+      "detail": "62.9% [47.0, 77.3], below 18.2% / above 18.9%"
+    },
+    {
+      "id": "MOD-10",
+      "check": "lstm (walk-forward) building (sum of bounds): coverage within 5 points of 80%",
+      "status": "UNDER (band too narrow)",
+      "detail": "63.6% [45.5, 81.8], below 18.2% / above 18.2%"
+    },
+    {
+      "id": "MOD-10",
+      "check": "avg4 (walk-forward) tower: coverage within 5 points of 80%",
+      "status": "UNDER (band too narrow)",
+      "detail": "62.9% [47.0, 77.3], below 18.2% / above 18.9%"
+    },
+    {
+      "id": "MOD-10",
+      "check": "avg4 (walk-forward) building (sum of bounds): coverage within 5 points of 80%",
+      "status": "UNDER (band too narrow)",
+      "detail": "63.6% [45.5, 81.8], below 18.2% / above 18.2%"
+    }
+  ]
+}

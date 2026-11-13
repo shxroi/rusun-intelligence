@@ -1,0 +1,8 @@
+id,check,status,detail
+MOD-12a,inputs unchanged when data from the origin onward is altered (forecast mode),PASS,"seq, fut, stat, base, unit compared"
+MOD-12b,inputs unchanged when only the target days are altered (training mode),PASS,"targets change, inputs do not"
+MOD-12c,control: altering the last history day DOES change the inputs (test can fail),PASS,sensitivity check of this test
+MOD-12d,a unit with a gap inside the lookback window is excluded (no interpolation),PASS,unit 3 given a NaN day
+MOD-12e,"base equals the mean of the last 28 days, so base x horizon is the avg4 baseline",PASS,max abs diff 0.00e+00
+MOD-12f,units below --min-kwh are excluded,PASS,unit 5 set to 0.2 kWh/day
+MOD-12g,untrained network outputs ratio 1 (reproduces avg4),PASS,max |out-1| = 0.00e+00

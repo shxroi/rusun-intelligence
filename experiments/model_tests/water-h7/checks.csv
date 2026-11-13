@@ -1,0 +1,12 @@
+id,check,status,detail
+DATA-01,no missing values in used columns,PASS,0 missing cells
+DATA-02,"one row per (origin, id)",PASS,0 duplicate keys
+DATA-03,no negative forecasts,PASS,0 rows
+DATA-04,avg4 (base x horizon) is positive,PASS,0 rows
+GATE-01,claim gate: >= 8 origins (row rule applies to unit level only),PASS,"24 origins, 6 series, 144 rows; few series = low power"
+MOD-08,relative MAE vs avg4: pooled ratio < 1 and 95% CI entirely below 1,FAIL,"1.034 [0.999, 1.087] (-3.4% vs baseline)"
+MOD-09,"Diebold-Mariano (HLN) vs avg4, absolute-error loss, one-sided p < 0.05",NOT SIGNIFICANT,T=24 h=1 stat=1.56 p=0.9339 wins=9/24
+MOD-10,lstm (walk-forward) tower: coverage within 5 points of 80%,UNDER (band too narrow),"62.9% [47.0, 77.3], below 18.2% / above 18.9%"
+MOD-10,lstm (walk-forward) building (sum of bounds): coverage within 5 points of 80%,UNDER (band too narrow),"63.6% [45.5, 81.8], below 18.2% / above 18.2%"
+MOD-10,avg4 (walk-forward) tower: coverage within 5 points of 80%,UNDER (band too narrow),"62.9% [47.0, 77.3], below 18.2% / above 18.9%"
+MOD-10,avg4 (walk-forward) building (sum of bounds): coverage within 5 points of 80%,UNDER (band too narrow),"63.6% [45.5, 81.8], below 18.2% / above 18.2%"
